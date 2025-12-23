@@ -18,6 +18,8 @@ Anforderungen: siehe ../Anforderungen/file-watcher.md
 
 import argparse
 import logging
+import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -66,9 +68,9 @@ class ClaudeMarkerHandler(FileSystemEventHandler):
         """Verarbeitet eine Dateiänderung."""
         path = Path(file_path)
 
-        # Verhindere doppelte Verarbeitung
+        # Verhindere doppelte Verarbeitung - keine neuen Prozesse für Dateien mit aktivem Claude-Prozess
         if file_path in self.processing:
-            logger.debug(f"ÜBERSPRUNGEN: Datei wird bereits verarbeitet: {path.name}")
+            logger.info(f"ÜBERSPRUNGEN: Datei hat bereits einen laufenden Claude-Prozess: {path.name}")
             return
 
         # Ignoriere versteckte Dateien und Ordner
@@ -146,8 +148,10 @@ class ClaudeMarkerHandler(FileSystemEventHandler):
         """Führt Claude asynchron aus."""
         command = (
             f"Lies die Datei '{rel_path}' und suche nach dem Marker 'claude!'. "
-            f"Führe den Befehl aus, der direkt nach 'claude!' steht. "
-            f"Nach erfolgreicher Ausführung, entferne den 'claude!' Marker und den zugehörigen Befehl aus der Datei."
+            f"Führe den Befehl aus, der direkt nach 'claude!' steht (bis zum Zeilenende oder nächsten Absatz). "
+            f"WICHTIG: Nach Ausführung des Befehls MUSST du die gesamte Zeile bzw. den Block mit 'claude!' "
+            f"und dem Befehl aus der Datei entfernen, um Endlosschleifen zu verhindern. "
+            f"Entferne dabei den kompletten 'claude! <befehl>'-Text, sodass kein 'claude!' mehr in der Datei steht."
         )
 
         logger.info(f"[Prozess #{process_id}] Starte Claude CLI...")
@@ -159,10 +163,43 @@ class ClaudeMarkerHandler(FileSystemEventHandler):
 
         try:
             # Starte Claude als asynchronen Prozess
+            # Finde claude-Executable (kann in verschiedenen Pfaden sein)
+            claude_path = shutil.which("claude")
+            if not claude_path:
+                # Versuche gängige Installationspfade
+                home = Path.home()
+                possible_paths = [
+                    home / ".claude" / "local" / "claude",
+                    home / ".local" / "bin" / "claude",
+                    home / ".npm-global" / "bin" / "claude",
+                    Path("/usr/local/bin/claude"),
+                    Path("/usr/bin/claude"),
+                ]
+                for p in possible_paths:
+                    if p.exists():
+                        claude_path = str(p)
+                        break
+
+            if not claude_path:
+                raise FileNotFoundError("claude command not found in PATH or common locations")
+
+            logger.debug(f"[Prozess #{process_id}] Claude gefunden: {claude_path}")
             logger.debug(f"[Prozess #{process_id}] Führe subprocess.Popen aus...")
+
+            # Erweitere PATH um gängige Benutzer-Verzeichnisse
+            env = os.environ.copy()
+            home = Path.home()
+            extra_paths = [
+                str(home / ".claude" / "local"),
+                str(home / ".local" / "bin"),
+                str(home / ".npm-global" / "bin"),
+                "/usr/local/bin",
+            ]
+            env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
+
             process = subprocess.Popen(
                 [
-                    "claude",
+                    claude_path,
                     "--dangerously-skip-permissions",
                     "-p",
                     command,
@@ -171,6 +208,7 @@ class ClaudeMarkerHandler(FileSystemEventHandler):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                env=env,
             )
             logger.info(f"[Prozess #{process_id}] Claude gestartet mit PID: {process.pid}")
 
