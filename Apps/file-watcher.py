@@ -38,6 +38,45 @@ logging.basicConfig(
 )
 logger = logging.getLogger('file-watcher')
 
+# Audio-Dateien Pfade
+AUDIO_DIR = Path(__file__).parent / "audio"
+AUDIO_STARTED = AUDIO_DIR / "process_started.mp3"
+AUDIO_COMPLETED = AUDIO_DIR / "process_completed.mp3"
+
+
+def play_audio(audio_file: Path) -> None:
+    """Spielt eine Audio-Datei asynchron ab (nicht-blockierend)."""
+    if not audio_file.exists():
+        logger.warning(f"Audio-Datei nicht gefunden: {audio_file}")
+        return
+
+    def _play():
+        try:
+            # Versuche verschiedene Audio-Player (Linux)
+            players = [
+                ["mpv", "--no-video", "--really-quiet", str(audio_file)],
+                ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(audio_file)],
+                ["paplay", str(audio_file)],
+                ["aplay", str(audio_file)],
+            ]
+
+            for player_cmd in players:
+                player = shutil.which(player_cmd[0])
+                if player:
+                    subprocess.run(
+                        player_cmd,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    return
+
+            logger.warning("Kein Audio-Player gefunden (mpv, ffplay, paplay, aplay)")
+        except Exception as e:
+            logger.debug(f"Fehler beim Abspielen von Audio: {e}")
+
+    # Starte in separatem Thread um nicht zu blockieren
+    threading.Thread(target=_play, daemon=True).start()
+
 
 class ClaudeMarkerHandler(FileSystemEventHandler):
     """Handler für Dateiänderungen, der nach claude! Markern sucht."""
@@ -211,6 +250,7 @@ class ClaudeMarkerHandler(FileSystemEventHandler):
                 env=env,
             )
             logger.info(f"[Prozess #{process_id}] Claude gestartet mit PID: {process.pid}")
+            play_audio(AUDIO_STARTED)
 
             # Starte einen Thread, um auf das Ende zu warten und aufzuräumen
             def cleanup():
@@ -244,6 +284,8 @@ class ClaudeMarkerHandler(FileSystemEventHandler):
                     logger.error(f"[Prozess #{process_id}] Claude beendet mit Fehler (Exit-Code: {process.returncode})")
                 else:
                     logger.info(f"[Prozess #{process_id}] Claude erfolgreich abgeschlossen")
+
+                play_audio(AUDIO_COMPLETED)
 
                 logger.info(f"[Prozess #{process_id}] Aktive Prozesse: {len(self.processing)}")
                 logger.info(f"[Prozess #{process_id}] {'='*40}")
