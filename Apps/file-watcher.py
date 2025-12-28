@@ -23,7 +23,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -122,9 +121,10 @@ def read_text_aloud(text: str) -> None:
         logger.info("Generiere Audio für Output...")
         client = OpenAI()
 
-        # Erstelle temporäre Datei
-        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
-            tmp_path = Path(tmp_file.name)
+        # Erstelle temporäre Datei im tmp-Verzeichnis neben diesem Script
+        tmp_dir = Path(__file__).parent / "tmp"
+        tmp_dir.mkdir(exist_ok=True)
+        tmp_path = tmp_dir / f"tts_output_{os.getpid()}.mp3"
 
         response = client.audio.speech.create(
             model="tts-1",
