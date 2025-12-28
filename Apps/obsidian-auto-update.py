@@ -27,6 +27,9 @@ def timestamp() -> str:
     return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
 
 
+MAX_FILE_SIZE = 10 * 1024  # 10 kB
+
+
 def collect_markdown_files(root_path: Path) -> list[Path]:
     """Sammelt alle gültigen Markdown-Dateien rekursiv."""
     md_files = []
@@ -48,7 +51,16 @@ def collect_markdown_files(root_path: Path) -> list[Path]:
             if 'Prompt' in filename or 'Goal' in filename:
                 continue
 
-            md_files.append(Path(dirpath) / filename)
+            file_path = Path(dirpath) / filename
+
+            # Dateien größer als 10kB überspringen
+            try:
+                if file_path.stat().st_size > MAX_FILE_SIZE:
+                    continue
+            except OSError:
+                continue
+
+            md_files.append(file_path)
 
     return md_files
 
@@ -88,7 +100,7 @@ def mark_file_for_update(file_path: Path) -> bool:
         content = file_path.read_text(encoding='utf-8')
 
         # Marker am Ende einfügen
-        marker = "\n\nBitte aktualisiere diesen Artikel claude!"
+        marker = "\n\nBitte aktualisiere diesen Artikel. Falls der Artikel in Englisch ist, übersetze ihn nach Deutsch. Behalte dabei Schlüsselbegriffe in Englisch, z.B. \"Kopfschräghaltung (Head Tilt)\". Überarbeite gerne das Markdown für bessere Lesbarkeit. claude!"
         new_content = content.rstrip() + marker + "\n"
 
         file_path.write_text(new_content, encoding='utf-8')
