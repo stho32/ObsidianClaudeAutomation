@@ -25,6 +25,7 @@ uv run Apps/<app-name>.py
 | App | Beschreibung |
 |-----|--------------|
 | file-watcher | Überwacht einen Ordner auf Dateiänderungen und führt Claude-Befehle aus |
+| obsidian-auto-update | Markiert zufällige Markdown-Dateien zur Aktualisierung durch Claude |
 
 ## UV Single-File Script Format
 
