@@ -3,6 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #     "watchdog>=4.0.0",
+#     "openai>=1.0.0",
 # ]
 # ///
 
@@ -22,12 +23,16 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+
+# Globale Konfiguration für TTS
+READ_OUTPUT_ENABLED = False
 
 # Logging-Konfiguration
 logging.basicConfig(
@@ -44,8 +49,13 @@ AUDIO_STARTED = AUDIO_DIR / "process_started.mp3"
 AUDIO_COMPLETED = AUDIO_DIR / "process_completed.mp3"
 
 
-def play_audio(audio_file: Path) -> None:
-    """Spielt eine Audio-Datei asynchron ab (nicht-blockierend)."""
+def play_audio(audio_file: Path, blocking: bool = False) -> None:
+    """Spielt eine Audio-Datei ab.
+
+    Args:
+        audio_file: Pfad zur Audio-Datei
+        blocking: Wenn True, wartet bis Audio fertig abgespielt ist
+    """
     if not audio_file.exists():
         logger.warning(f"Audio-Datei nicht gefunden: {audio_file}")
         return
@@ -74,8 +84,67 @@ def play_audio(audio_file: Path) -> None:
         except Exception as e:
             logger.debug(f"Fehler beim Abspielen von Audio: {e}")
 
-    # Starte in separatem Thread um nicht zu blockieren
-    threading.Thread(target=_play, daemon=True).start()
+    if blocking:
+        _play()
+    else:
+        # Starte in separatem Thread um nicht zu blockieren
+        threading.Thread(target=_play, daemon=True).start()
+
+
+def read_text_aloud(text: str) -> None:
+    """Liest Text vor mittels OpenAI TTS und löscht die temporäre Audio-Datei danach.
+
+    Args:
+        text: Der vorzulesende Text
+    """
+    if not text or not text.strip():
+        logger.debug("Kein Text zum Vorlesen vorhanden")
+        return
+
+    # Prüfe ob OPENAI_API_KEY gesetzt ist
+    if not os.getenv("OPENAI_API_KEY"):
+        logger.warning("OPENAI_API_KEY nicht gesetzt - kann Output nicht vorlesen")
+        return
+
+    try:
+        from openai import OpenAI
+    except ImportError:
+        logger.warning("openai-Paket nicht installiert - kann Output nicht vorlesen")
+        return
+
+    # Kürze Text wenn nötig (TTS hat Limits)
+    max_chars = 4000
+    if len(text) > max_chars:
+        text = text[:max_chars] + "... (Text gekürzt)"
+        logger.info(f"Text für TTS auf {max_chars} Zeichen gekürzt")
+
+    try:
+        logger.info("Generiere Audio für Output...")
+        client = OpenAI()
+
+        # Erstelle temporäre Datei
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+
+        response = client.audio.speech.create(
+            model="tts-1",
+            voice="onyx",
+            input=text,
+        )
+        response.stream_to_file(str(tmp_path))
+
+        logger.info("Spiele Output-Audio ab...")
+        play_audio(tmp_path, blocking=True)
+
+        # Lösche temporäre Datei
+        try:
+            tmp_path.unlink()
+            logger.debug(f"Temporäre Audio-Datei gelöscht: {tmp_path}")
+        except OSError as e:
+            logger.warning(f"Konnte temporäre Audio-Datei nicht löschen: {e}")
+
+    except Exception as e:
+        logger.error(f"Fehler beim Vorlesen des Outputs: {e}")
 
 
 class ClaudeMarkerHandler(FileSystemEventHandler):
@@ -287,6 +356,10 @@ class ClaudeMarkerHandler(FileSystemEventHandler):
 
                 play_audio(AUDIO_COMPLETED)
 
+                # Lese Output vor, wenn aktiviert
+                if READ_OUTPUT_ENABLED and stdout:
+                    read_text_aloud(stdout)
+
                 logger.info(f"[Prozess #{process_id}] Aktive Prozesse: {len(self.processing)}")
                 logger.info(f"[Prozess #{process_id}] {'='*40}")
 
@@ -323,8 +396,17 @@ def main():
         action="store_true",
         help="Nur Warnungen und Fehler anzeigen",
     )
+    parser.add_argument(
+        "--read-output",
+        action="store_true",
+        help="Liest den Claude-Output nach Prozessende vor (benötigt OPENAI_API_KEY)",
+    )
 
     args = parser.parse_args()
+
+    # Setze globale TTS-Konfiguration
+    global READ_OUTPUT_ENABLED
+    READ_OUTPUT_ENABLED = args.read_output
 
     # Log-Level anpassen
     if args.verbose:
