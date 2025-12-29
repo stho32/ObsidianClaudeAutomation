@@ -66,6 +66,31 @@ Erstelle eine neue UV-basierte Python-Anwendung in diesem Repository.
    - `Anforderungen/<app-name>.md` - Anforderungsdokument
    - `Apps/<app-name>.py` - Das UV-Single-File-Script mit dem Standard-Header
 
+## Logging-Anforderungen
+
+Jede App soll gut nach STDOUT loggen, damit Verlauf und auftretende Probleme gut nachvollziehbar sind:
+
+- **Strukturiertes Logging**: Verwende das `logging`-Modul mit aussagekräftigen Log-Levels (DEBUG, INFO, WARNING, ERROR)
+- **Zeitstempel**: Jede Log-Nachricht soll einen Zeitstempel enthalten
+- **Kontext**: Log-Nachrichten sollen relevanten Kontext enthalten (z.B. welche Datei verarbeitet wird, welcher Schritt ausgeführt wird)
+- **Fortschritt**: Bei längeren Operationen soll der Fortschritt geloggt werden
+- **Fehlerdetails**: Bei Fehlern sollen hilfreiche Details geloggt werden (nicht nur "Fehler aufgetreten")
+
+### Empfohlenes Logging-Setup
+
+```python
+import logging
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+```
+
 ## UV Single-File Script Template
 
 ```python
@@ -82,8 +107,23 @@ Erstelle eine neue UV-basierte Python-Anwendung in diesem Repository.
 Anforderungen: siehe ../Anforderungen/[app-name].md
 """
 
+import logging
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+
+
 def main():
-    pass
+    logger.info("App gestartet")
+    # Code hier...
+    logger.info("App beendet")
+
 
 if __name__ == "__main__":
     main()
