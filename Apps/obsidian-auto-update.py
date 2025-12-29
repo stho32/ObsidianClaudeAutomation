@@ -99,6 +99,10 @@ def mark_file_for_update(file_path: Path) -> bool:
     try:
         content = file_path.read_text(encoding='utf-8')
 
+        # Doppelte Prüfung: Falls zwischen check_file und hier bereits markiert wurde
+        if 'claude!' in content:
+            return False
+
         # Marker am Ende einfügen
         marker = "\n\nBitte aktualisiere diesen Artikel. Falls der Artikel in Englisch ist, übersetze ihn nach Deutsch. Behalte dabei Schlüsselbegriffe in Englisch, z.B. \"Kopfschräghaltung (Head Tilt)\". Überarbeite gerne das Markdown für bessere Lesbarkeit. claude!"
         new_content = content.rstrip() + marker + "\n"
